@@ -3,6 +3,7 @@
 // Usage:
 //   npx tsx src/index.ts            normal run (alert only on fresh crossings)
 //   npx tsx src/index.ts --status   print current RSI of every timeframe, no alert
+//   npx tsx src/index.ts --summary  send a daily RSI summary of every timeframe to Telegram
 //   npx tsx src/index.ts --test     send a test message to Telegram
 
 import { rsi } from "./rsi.js";
@@ -81,6 +82,9 @@ async function main() {
   }
 
   const statusOnly = args.includes("--status");
+  const summaryMode = args.includes("--summary");
+  const summaryLines: string[] = [];
+  let summaryPrice: number | null = null;
   const timeframes = ALL_TIMEFRAMES.filter((tf) => WANTED.includes(tf.label.toLowerCase()));
   if (timeframes.length === 0) throw new Error(`No valid timeframes in TIMEFRAMES="${WANTED.join(",")}"`);
 
@@ -104,6 +108,18 @@ async function main() {
         `[${tf.label}] RSI(${RSI_PERIOD}) prev=${prevRsi.toFixed(1)} last=${lastRsi.toFixed(1)} ` +
           `close=${last.close} closed ${ageMin.toFixed(0)} min ago`
       );
+      if (summaryMode) {
+        const icon = lastRsi >= OVERBOUGHT ? "🔴" : lastRsi <= OVERSOLD ? "🟢" : "⚪";
+        const label =
+          lastRsi >= OVERBOUGHT ? "overbought" : lastRsi <= OVERSOLD ? "oversold" : "ปกติ";
+        const arrow = lastRsi > prevRsi ? "↑" : lastRsi < prevRsi ? "↓" : "→";
+        summaryLines.push(
+          `${icon} ${tf.label.padEnd(2)}  RSI ${lastRsi.toFixed(1)} ${arrow} (ก่อนหน้า ${prevRsi.toFixed(1)}) ${label}`
+        );
+        // Use the shortest timeframe in the list as the "latest price" reference.
+        if (summaryPrice === null) summaryPrice = last.close;
+        continue;
+      }
       if (statusOnly) continue;
 
       // Only react to a candle that closed recently, otherwise 4h/1D/1W would repeat every hour.
@@ -126,7 +142,18 @@ async function main() {
     } catch (err) {
       failed = true;
       console.error(`[${tf.label}] ${(err as Error).message}`);
+      if (summaryMode) summaryLines.push(`⚠️ ${tf.label.padEnd(2)}  ดึงข้อมูลไม่สำเร็จ`);
     }
+  }
+
+  if (summaryMode && summaryLines.length > 0) {
+    const msg =
+      `📊 สรุป RSI(${RSI_PERIOD}) ${SYMBOL} — ${fmtBangkok(now)}\n` +
+      (summaryPrice !== null ? `ราคาล่าสุด: ${summaryPrice.toLocaleString("en-US")} USDT\n` : "") +
+      `\n${summaryLines.join("\n")}\n\n` +
+      `เกณฑ์: overbought ≥ ${OVERBOUGHT} | oversold ≤ ${OVERSOLD} (ใช้แท่งที่ปิดแล้ว)`;
+    await sendTelegram(msg);
+    console.log("Summary sent.");
   }
 
   if (failed) process.exitCode = 1;
