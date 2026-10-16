@@ -4,6 +4,8 @@ on:
   schedule:
     # ทุกชั่วโมงที่นาทีที่ 5 (UTC) -- รอให้แท่งเทียนปิดสนิทก่อนค่อยเช็ก
     - cron: "5 * * * *"
+    # สรุป RSI ทุกเช้า 07:10 เวลาไทย (00:10 UTC) หลังแท่ง 1D/4h/1W ปิดแล้ว
+    - cron: "10 0 * * *"
   workflow_dispatch:
     inputs:
       timeframes:
@@ -11,11 +13,11 @@ on:
         required: false
         default: ""
       mode:
-        description: "run = เช็กจริง | status = ดูค่า RSI อย่างเดียวไม่แจ้งเตือน | test = ส่งข้อความทดสอบเข้า Telegram"
+        description: "run = เช็กจริง | status = ดูค่า RSI ใน log | summary = ส่งสรุป RSI เข้า Telegram | test = ส่งข้อความทดสอบ"
         required: false
         default: "run"
         type: choice
-        options: [run, status, test]
+        options: [run, status, summary, test]
 
 jobs:
   check:
@@ -43,10 +45,12 @@ jobs:
           OVERSOLD: ${{ vars.OVERSOLD || '30' }}
           # ต้องไม่เกินช่วงห่างของ cron (60 นาที) ไม่งั้นจะเตือนซ้ำ
           WINDOW_MINUTES: "60"
-          MODE: ${{ inputs.mode || 'run' }}
+          # รอบ cron ตอน 00:10 UTC = สรุปรายเช้า, รอบอื่น = เช็กปกติ
+          MODE: ${{ inputs.mode || (github.event.schedule == '10 0 * * *' && 'summary') || 'run' }}
         run: |
           case "$MODE" in
-            status) npx tsx src/index.ts --status ;;
+            status)  npx tsx src/index.ts --status ;;
+            summary) npx tsx src/index.ts --summary ;;
             test)   npx tsx src/index.ts --test ;;
             *)      npx tsx src/index.ts ;;
           esac
