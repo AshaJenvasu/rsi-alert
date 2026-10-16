@@ -1,0 +1,52 @@
+name: BTC RSI alert
+
+on:
+  schedule:
+    # ทุกชั่วโมงที่นาทีที่ 5 (UTC) -- รอให้แท่งเทียนปิดสนิทก่อนค่อยเช็ก
+    - cron: "5 * * * *"
+  workflow_dispatch:
+    inputs:
+      timeframes:
+        description: "ไทม์เฟรมที่จะเช็กรอบนี้ เช่น 1h,4h,1D,1W"
+        required: false
+        default: ""
+      mode:
+        description: "run = เช็กจริง | status = ดูค่า RSI อย่างเดียวไม่แจ้งเตือน | test = ส่งข้อความทดสอบเข้า Telegram"
+        required: false
+        default: "run"
+        type: choice
+        options: [run, status, test]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run RSI check
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # เลือกไทม์เฟรม: ค่าตอนกดรันเอง > Repository variable "TIMEFRAMES" > ค่าเริ่มต้น
+          TIMEFRAMES: ${{ inputs.timeframes || vars.TIMEFRAMES || '1h,4h,1D,1W' }}
+          SYMBOL: ${{ vars.SYMBOL || 'BTC-USDT' }}
+          RSI_PERIOD: ${{ vars.RSI_PERIOD || '7' }}
+          OVERBOUGHT: ${{ vars.OVERBOUGHT || '70' }}
+          OVERSOLD: ${{ vars.OVERSOLD || '30' }}
+          # ต้องไม่เกินช่วงห่างของ cron (60 นาที) ไม่งั้นจะเตือนซ้ำ
+          WINDOW_MINUTES: "60"
+          MODE: ${{ inputs.mode || 'run' }}
+        run: |
+          case "$MODE" in
+            status) npx tsx src/index.ts --status ;;
+            test)   npx tsx src/index.ts --test ;;
+            *)      npx tsx src/index.ts ;;
+          esac

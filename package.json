@@ -1,0 +1,21 @@
+{
+  "name": "rsi-alert",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BTC RSI(7) overbought/oversold alerts to Telegram (OKX data, GitHub Actions)",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "status": "tsx src/index.ts --status",
+    "test-telegram": "tsx src/index.ts --test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
