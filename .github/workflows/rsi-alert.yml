@@ -2,8 +2,10 @@ name: BTC RSI alert
 
 on:
   schedule:
-    # ทุกชั่วโมงที่นาทีที่ 5 (UTC) -- รอให้แท่งเทียนปิดสนิทก่อนค่อยเช็ก
-    - cron: "5 * * * *"
+    # เช็กทุกชั่วโมงที่นาทีที่ 17 (UTC) -- เลี่ยงต้นชั่วโมงที่ GitHub คิวแน่น จะได้ถูกข้าม/ดีเลย์น้อยลง
+    - cron: "17 * * * *"
+    # สรุป RSI ทุกเช้า 07:13 เวลาไทย (00:13 UTC) หลังแท่ง 1D/4h/1W ปิดแล้ว
+    - cron: "13 0 * * *"
   workflow_dispatch:
     inputs:
       timeframes:
@@ -11,11 +13,20 @@ on:
         required: false
         default: ""
       mode:
-        description: "run = เช็กจริง | status = ดูค่า RSI อย่างเดียวไม่แจ้งเตือน | test = ส่งข้อความทดสอบเข้า Telegram"
+        description: "run = เช็กจริง | status = ดูค่า RSI ใน log | summary = ส่งสรุป RSI เข้า Telegram | test = ส่งข้อความทดสอบ"
         required: false
         default: "run"
         type: choice
-        options: [run, status, test]
+        options: [run, status, summary, test]
+
+# ต้องเขียนไฟล์ state/alerts.json กลับเข้า repo (จำว่าแจ้งเตือนแท่งไหนไปแล้ว)
+permissions:
+  contents: write
+
+# กันสองรอบรันทับกันแล้วเขียน state ชนกัน
+concurrency:
+  group: rsi-alert
+  cancel-in-progress: false
 
 jobs:
   check:
@@ -41,12 +52,28 @@ jobs:
           RSI_PERIOD: ${{ vars.RSI_PERIOD || '7' }}
           OVERBOUGHT: ${{ vars.OVERBOUGHT || '70' }}
           OVERSOLD: ${{ vars.OVERSOLD || '30' }}
-          # ต้องไม่เกินช่วงห่างของ cron (60 นาที) ไม่งั้นจะเตือนซ้ำ
+          # ใช้เฉพาะรอบแรกสุดที่ยังไม่มีไฟล์ state
           WINDOW_MINUTES: "60"
-          MODE: ${{ inputs.mode || 'run' }}
+          # รอบ cron ตอน 00:13 UTC = สรุปรายเช้า, รอบอื่น = เช็กปกติ
+          MODE: ${{ inputs.mode || (github.event.schedule == '13 0 * * *' && 'summary') || 'run' }}
         run: |
           case "$MODE" in
-            status) npx tsx src/index.ts --status ;;
-            test)   npx tsx src/index.ts --test ;;
-            *)      npx tsx src/index.ts ;;
+            status)  npx tsx src/index.ts --status ;;
+            summary) npx tsx src/index.ts --summary ;;
+            test)    npx tsx src/index.ts --test ;;
+            *)       npx tsx src/index.ts ;;
           esac
+
+      - name: Save alert state
+        if: ${{ always() }}
+        run: |
+          if [ -n "$(git status --porcelain state/)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state/
+            git commit -m "chore: update alert state"
+            git pull --rebase
+            git push
+          else
+            echo "state unchanged"
+          fi

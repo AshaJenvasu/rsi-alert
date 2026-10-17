@@ -25,3 +25,25 @@ export function rsi(closes: number[], period: number): number[] {
   }
   return out;
 }
+
+export type Crossing = { index: number; kind: "overbought" | "oversold" };
+
+// Candles (from `fromIndex` on) where RSI just moved INTO the overbought / oversold zone.
+export function findCrossings(
+  rsis: number[],
+  overbought: number,
+  oversold: number,
+  fromIndex: number,
+): Crossing[] {
+  const out: Crossing[] = [];
+  for (let i = Math.max(1, fromIndex); i < rsis.length; i++) {
+    const prev = rsis[i - 1];
+    const cur = rsis[i];
+    if (Number.isNaN(prev) || Number.isNaN(cur)) continue;
+    if (prev < overbought && cur >= overbought)
+      out.push({ index: i, kind: "overbought" });
+    else if (prev > oversold && cur <= oversold)
+      out.push({ index: i, kind: "oversold" });
+  }
+  return out;
+}
