@@ -16,7 +16,12 @@ import { findCrossings, rsi } from "./rsi.js";
 
 // lookback = how many of the latest closed candles are re-checked on every run.
 // (1h: 6 candles = survive ~6 hours of skipped runs)
-type Timeframe = { label: string; okxBar: string; ms: number; lookback: number };
+type Timeframe = {
+  label: string;
+  okxBar: string;
+  ms: number;
+  lookback: number;
+};
 
 // "utc" bars so daily/weekly candles open at 00:00 UTC (same as TradingView on crypto).
 const ALL_TIMEFRAMES: Timeframe[] = [
@@ -54,13 +59,20 @@ type State = { since: number; alerted: Record<string, number> };
 function loadState(now: number): { state: State; isNew: boolean } {
   try {
     const s = JSON.parse(readFileSync(STATE_FILE, "utf8")) as State;
-    if (typeof s.since === "number" && s.alerted && typeof s.alerted === "object") {
+    if (
+      typeof s.since === "number" &&
+      s.alerted &&
+      typeof s.alerted === "object"
+    ) {
       return { state: s, isNew: false };
     }
   } catch {
     // missing or unreadable -> start fresh
   }
-  return { state: { since: now - WINDOW_MINUTES * 60_000, alerted: {} }, isNew: true };
+  return {
+    state: { since: now - WINDOW_MINUTES * 60_000, alerted: {} },
+    isNew: true,
+  };
 }
 
 function saveState(state: State): void {
@@ -72,7 +84,11 @@ async function fetchClosedCandles(tf: Timeframe): Promise<Candle[]> {
   const url = `https://www.okx.com/api/v5/market/candles?instId=${SYMBOL}&bar=${tf.okxBar}&limit=300`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`OKX HTTP ${res.status} for ${tf.label}`);
-  const json = (await res.json()) as { code: string; msg: string; data: string[][] };
+  const json = (await res.json()) as {
+    code: string;
+    msg: string;
+    data: string[][];
+  };
   if (json.code !== "0") throw new Error(`OKX error ${json.code}: ${json.msg}`);
 
   // OKX returns newest first: [ts, o, h, l, c, vol, volCcy, volCcyQuote, confirm]
@@ -86,11 +102,14 @@ async function sendTelegram(text: string): Promise<void> {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
     throw new Error("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID");
   }
-  const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text }),
-  });
+  const res = await fetch(
+    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text }),
+    },
+  );
   if (!res.ok) {
     // Don't print the URL (it contains the token)
     throw new Error(`Telegram HTTP ${res.status}: ${await res.text()}`);
@@ -119,8 +138,11 @@ async function main() {
   const readOnly = statusOnly || summaryMode;
   const summaryLines: string[] = [];
   let summaryPrice: number | null = null;
-  const timeframes = ALL_TIMEFRAMES.filter((tf) => WANTED.includes(tf.label.toLowerCase()));
-  if (timeframes.length === 0) throw new Error(`No valid timeframes in TIMEFRAMES="${WANTED.join(",")}"`);
+  const timeframes = ALL_TIMEFRAMES.filter((tf) =>
+    WANTED.includes(tf.label.toLowerCase()),
+  );
+  if (timeframes.length === 0)
+    throw new Error(`No valid timeframes in TIMEFRAMES="${WANTED.join(",")}"`);
 
   const now = Date.now();
   const { state, isNew: stateIsNew } = loadState(now);
@@ -130,9 +152,13 @@ async function main() {
   for (const tf of timeframes) {
     try {
       const candles = await fetchClosedCandles(tf);
-      const rsis = rsi(candles.map((c) => c.close), RSI_PERIOD);
+      const rsis = rsi(
+        candles.map((c) => c.close),
+        RSI_PERIOD,
+      );
       const n = candles.length;
-      if (n < RSI_PERIOD + 3) throw new Error(`Not enough candles for ${tf.label}`);
+      if (n < RSI_PERIOD + 3)
+        throw new Error(`Not enough candles for ${tf.label}`);
 
       const last = candles[n - 1];
       const prevRsi = rsis[n - 2];
@@ -141,16 +167,21 @@ async function main() {
 
       console.log(
         `[${tf.label}] RSI(${RSI_PERIOD}) prev=${prevRsi.toFixed(1)} last=${lastRsi.toFixed(1)} ` +
-          `close=${last.close} closed ${ageMin.toFixed(0)} min ago`
+          `close=${last.close} closed ${ageMin.toFixed(0)} min ago`,
       );
 
       if (summaryMode) {
-        const icon = lastRsi >= OVERBOUGHT ? "🔴" : lastRsi <= OVERSOLD ? "🟢" : "⚪";
+        const icon =
+          lastRsi >= OVERBOUGHT ? "🔴" : lastRsi <= OVERSOLD ? "🟢" : "⚪";
         const label =
-          lastRsi >= OVERBOUGHT ? "overbought" : lastRsi <= OVERSOLD ? "oversold" : "ปกติ";
+          lastRsi >= OVERBOUGHT
+            ? "overbought"
+            : lastRsi <= OVERSOLD
+              ? "oversold"
+              : "ปกติ";
         const arrow = lastRsi > prevRsi ? "↑" : lastRsi < prevRsi ? "↓" : "→";
         summaryLines.push(
-          `${icon} ${tf.label.padEnd(2)}  RSI ${lastRsi.toFixed(1)} ${arrow} (ก่อนหน้า ${prevRsi.toFixed(1)}) ${label}`
+          `${icon} ${tf.label.padEnd(2)}  RSI ${lastRsi.toFixed(1)} ${arrow} (ก่อนหน้า ${prevRsi.toFixed(1)}) ${label}`,
         );
         // Use the first (shortest) timeframe in the list as the "latest price" reference.
         if (summaryPrice === null) summaryPrice = last.close;
@@ -159,7 +190,12 @@ async function main() {
       if (statusOnly) continue;
 
       // Re-check the last `lookback` closed candles; alert on crossings not alerted before.
-      const crossings = findCrossings(rsis, OVERBOUGHT, OVERSOLD, n - tf.lookback);
+      const crossings = findCrossings(
+        rsis,
+        OVERBOUGHT,
+        OVERSOLD,
+        n - tf.lookback,
+      );
       for (const c of crossings) {
         const candle = candles[c.index];
         const closeTime = candle.ts + tf.ms;
@@ -167,7 +203,8 @@ async function main() {
         if (closeTime <= (state.alerted[key] ?? state.since)) continue; // already handled
 
         const emoji = c.kind === "overbought" ? "🔴" : "🟢";
-        const zone = c.kind === "overbought" ? `≥ ${OVERBOUGHT}` : `≤ ${OVERSOLD}`;
+        const zone =
+          c.kind === "overbought" ? `≥ ${OVERBOUGHT}` : `≤ ${OVERSOLD}`;
         const lateMin = (now - closeTime) / 60_000;
         const lateNote =
           lateMin > LATE_AFTER_MINUTES
@@ -182,19 +219,24 @@ async function main() {
         await sendTelegram(msg); // if this throws, state is NOT updated -> retried next run
         state.alerted[key] = closeTime;
         saveState(state);
-        console.log(`  -> alert sent (${c.kind}, candle closed ${fmtBangkok(closeTime)})`);
+        console.log(
+          `  -> alert sent (${c.kind}, candle closed ${fmtBangkok(closeTime)})`,
+        );
       }
     } catch (err) {
       failed = true;
       console.error(`[${tf.label}] ${(err as Error).message}`);
-      if (summaryMode) summaryLines.push(`⚠️ ${tf.label.padEnd(2)}  ดึงข้อมูลไม่สำเร็จ`);
+      if (summaryMode)
+        summaryLines.push(`⚠️ ${tf.label.padEnd(2)}  ดึงข้อมูลไม่สำเร็จ`);
     }
   }
 
   if (summaryMode && summaryLines.length > 0) {
     const msg =
       `📊 สรุป RSI(${RSI_PERIOD}) ${SYMBOL} — ${fmtBangkok(now)}\n` +
-      (summaryPrice !== null ? `ราคาล่าสุด: ${summaryPrice.toLocaleString("en-US")} USDT\n` : "") +
+      (summaryPrice !== null
+        ? `ราคาล่าสุด: ${summaryPrice.toLocaleString("en-US")} USDT\n`
+        : "") +
       `\n${summaryLines.join("\n")}\n\n` +
       `เกณฑ์: overbought ≥ ${OVERBOUGHT} | oversold ≤ ${OVERSOLD} (ใช้แท่งที่ปิดแล้ว)`;
     await sendTelegram(msg);
