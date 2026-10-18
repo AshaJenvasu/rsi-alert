@@ -1,6 +1,7 @@
 {
   "since": 1792197212916,
   "alerted": {
-    "1h:oversold": 1792256400000
+    "1h:oversold": 1792256400000,
+    "1h:overbought": 1792296000000
   }
 }
