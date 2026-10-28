@@ -2,14 +2,14 @@ name: BTC RSI alert
 
 on:
   schedule:
-    # เช็กทุกชั่วโมงที่นาทีที่ 17 (UTC) -- เลี่ยงต้นชั่วโมงที่ GitHub คิวแน่น จะได้ถูกข้าม/ดีเลย์น้อยลง
-    - cron: "17 * * * *"
-    # สรุป RSI ทุกเช้า 07:13 เวลาไทย (00:13 UTC) หลังแท่ง 1D/4h/1W ปิดแล้ว
-    - cron: "13 0 * * *"
+    # เช็กการตัดเข้าโซน 70/30 วันละ 4 รอบ (UTC 00:17 = 07:17 เวลาไทย หลังแท่ง 1D ปิด รอบที่เหลือเป็นตัวสำรองกันถูกข้าม)
+    - cron: "17 0,6,12,18 * * *"
+    # สรุป RSI ทุกวันจันทร์ 07:43 เวลาไทย (00:43 UTC) หลังแท่ง 1W ปิดแล้ว
+    - cron: "43 0 * * 1"
   workflow_dispatch:
     inputs:
       timeframes:
-        description: "ไทม์เฟรมที่จะเช็กรอบนี้ เช่น 1h,4h,1D,1W"
+        description: "ไทม์เฟรมที่จะเช็กรอบนี้ เช่น 1D,1W"
         required: false
         default: ""
       mode:
@@ -19,7 +19,7 @@ on:
         type: choice
         options: [run, status, summary, test]
 
-# ต้องเขียนไฟล์ state/alerts.json กลับเข้า repo (จำว่าแจ้งเตือนแท่งไหนไปแล้ว)
+# ต้องเขียนไฟล์ state/alerts.json กลับเข้า repo เพื่อจำว่าแจ้งแท่งไหนไปแล้ว
 permissions:
   contents: write
 
@@ -42,20 +42,20 @@ jobs:
 
       - run: npm ci
 
+      # รันสคริปต์ ไทม์เฟรมเริ่มต้นเหลือแค่ 1D กับ 1W (ปรับได้ด้วย Variable ชื่อ TIMEFRAMES)
       - name: Run RSI check
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          # เลือกไทม์เฟรม: ค่าตอนกดรันเอง > Repository variable "TIMEFRAMES" > ค่าเริ่มต้น
-          TIMEFRAMES: ${{ inputs.timeframes || vars.TIMEFRAMES || '1h,4h,1D,1W' }}
+          TIMEFRAMES: ${{ inputs.timeframes || vars.TIMEFRAMES || '1D,1W' }}
           SYMBOL: ${{ vars.SYMBOL || 'BTC-USDT' }}
           RSI_PERIOD: ${{ vars.RSI_PERIOD || '7' }}
           OVERBOUGHT: ${{ vars.OVERBOUGHT || '70' }}
           OVERSOLD: ${{ vars.OVERSOLD || '30' }}
           # ใช้เฉพาะรอบแรกสุดที่ยังไม่มีไฟล์ state
           WINDOW_MINUTES: "60"
-          # รอบ cron ตอน 00:13 UTC = สรุปรายเช้า, รอบอื่น = เช็กปกติ
-          MODE: ${{ inputs.mode || (github.event.schedule == '13 0 * * *' && 'summary') || 'run' }}
+          # รอบ cron วันจันทร์ 00:43 UTC = สรุปรายสัปดาห์ รอบอื่น = เช็กปกติ
+          MODE: ${{ inputs.mode || (github.event.schedule == '43 0 * * 1' && 'summary') || 'run' }}
         run: |
           case "$MODE" in
             status)  npx tsx src/index.ts --status ;;
@@ -64,6 +64,7 @@ jobs:
             *)       npx tsx src/index.ts ;;
           esac
 
+      # บันทึก state กลับเข้า repo เฉพาะเมื่อไฟล์เปลี่ยน
       - name: Save alert state
         if: ${{ always() }}
         run: |
