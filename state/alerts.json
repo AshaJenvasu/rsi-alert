@@ -4,6 +4,7 @@
     "1h:oversold": 1792980000000,
     "1h:overbought": 1793138400000,
     "4h:overbought": 1792584000000,
-    "4h:oversold": 1792987200000
+    "4h:oversold": 1792987200000,
+    "1D:oversold": 1793318400000
   }
 }
